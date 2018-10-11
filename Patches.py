@@ -1,19 +1,14 @@
 import io
-import json
 import logging
 import os
 import platform
 import struct
 import subprocess
 import random
-import copy
 
-from Hints import writeGossipStoneHintsHints, buildBossRewardHints, buildGanonText, getSimpleHintNoPrefix
-from Utils import local_path, default_output_path, random_choices
+from Hints import buildGossipHints, buildBossRewardHints
+from Utils import local_path, output_path, random_choices
 from Items import ItemFactory, item_data
-from Messages import *
-from OcarinaSongs import Song, str_to_song, replace_songs
-from MQ import patch_files, File, update_dmadata, insert_space, add_relocations
 
 TunicColors = {
     "Custom Color": [0, 0, 0],
@@ -156,8 +151,8 @@ def patch_rom(world, rom):
             # DOOT: find out what things we need to patch for this to work
             pass
         elif location.type == 'Boss':
-            rom.write_byte(locationaddress, itemid)
-            rom.write_byte(secondaryaddress, item_data[item.name][2])
+                rom.write_byte(locationaddress, itemid)
+                rom.write_byte(secondaryaddress, item_data[item.name][2])
 
     if world.shuffle_smallkeys == 'remove' or world.shuffle_bosskeys == 'remove':
         locked_doors = get_locked_doors(rom, world)
@@ -187,6 +182,8 @@ def patch_rom(world, rom):
     # rom.write_bytes(0xE2ADB2, [0x70, 0x7A])
     # rom.write_bytes(0xE2ADB6, [0x70, 0x57])
     # buildBossRewardHints(world, messages)
+
+
 
     # add song messages
     # add_song_messages(messages, world)
@@ -228,21 +225,23 @@ def patch_rom(world, rom):
     random.seed()
     # Human Link Colors
     # set_color(world, rom, [0x0116639C, 0x011668C4, 0x01166DCC, 0x01166FA4, 0x01167064, 0x0116766C, 0x01167AE4, 0x01167D1C, 0x011681EC], world.tunic_colors[0])
-    set_color(world, rom, [0x0116639C, 0x011668C4, 0x01166DCC], world.tunic_colors[1])
-    set_color(world, rom, [0x01166FA4, 0x01167064, 0x0116766C, 0x01167AE4], world.tunic_colors[0])
-    set_color(world, rom, [0x01167D1C, 0x011681EC], world.tunic_colors[2])
+    set_color(world, rom, [0x011681EC], world.tunic_colors[0])  # Hat
+    set_color(world, rom, [0x01166FA4, 0x01167064, 0x0116766C, 0x01167AE4, 0x01167D1C], world.tunic_colors[1])  # Shirt
+    set_color(world, rom, [0x0116639C, 0x011668C4, 0x01166DCC], world.tunic_colors[2]) # Pants
     # Deku Link Colors
-    # set_color(world, rom, [0x011A8EB2], world.tunic_palettes[0], 256, True)
-    # set_color(world, rom, [0x011A8F32], world.tunic_palettes[1], 32, True)
-    set_color(world, rom, [0x011A90B0], world.tunic_palettes[2], 1, True)
+    if world.dekumorph:
+        set_color(world, rom, [0x011A8EB2], world.tunic_palettes[0], 256, True)
+    set_color(world, rom, [0x011A9092], world.tunic_palettes[1], 14, True)
     # Goron Link Colors
-    set_color(world, rom, [0x0117C780, 0x01186EB8, 0x01186F38], world.tunic_palettes[3], 64, True)
-    set_color(world, rom, [0x0117C800], world.tunic_palettes[4], 64, True)
-    set_color(world, rom, [0x01197000], world.tunic_palettes[5], 256, True)
+    set_color(world, rom, [0x0117C780, 0x01186EB8, 0x01186F38], world.tunic_palettes[2], 64, True)
+    set_color(world, rom, [0x0117C800], world.tunic_palettes[3], 64, True)
+    # Zora Link
+    if world.zoramorph:
+        set_color(world, rom, [0x01197000], world.tunic_palettes[4], 256, True)
+    set_color(world, rom, [0x01197130], world.tunic_palettes[5], 28, True)
     set_color(world, rom, [0x0119E578], world.tunic_palettes[6], 256, True)
-    set_color(world, rom, [0x01197140], world.tunic_palettes[7], 32, True)
-    set_color(world, rom, [0x01197100], world.tunic_palettes[8], 32, True)
-    set_color(world, rom, [0x010FB0B0, 0x011A2228], world.tunic_palettes[9], 512, True)
+    # Zora Boomerang
+    set_color(world, rom, [0x010FB0B0, 0x011A2228], world.tunic_palettes[7], 512, True)
     # patch navi colors
 
     #Navi hints
@@ -288,7 +287,7 @@ chestTypeMap = {
         #    small   big     boss
     0x0000: [0x5000, 0x0000, 0x2000], #Large
     0x1000: [0x7000, 0x1000, 0x1000], #Large, Appears, Clear Flag
-    0x2000: [0x5000, 0x0000, 0x2000], #Boss Key’s Chest
+    0x2000: [0x5000, 0x0000, 0x2000], #Boss Key's Chest
     0x3000: [0x8000, 0x3000, 0x3000], #Large, Falling, Switch Flag
     0x4000: [0x6000, 0x4000, 0x4000], #Large, Invisible
     0x5000: [0x5000, 0x0000, 0x2000], #Small
@@ -608,6 +607,7 @@ bgm_sequence_ids = [
     (0x3C, 'Milk Bar'),
     (0x3E, 'Woods of Mystery'),
     (0x40, 'Gorman Race'),
+    (0x42, 'Gorman Bros.'),
     (0x43, 'Potion Shop'),
     (0x44, 'Store'),
     (0x45, 'Gaebora'),
@@ -662,7 +662,6 @@ short_bgm_sequence_ids = [
     (0x3D, 'Appear'),
     (0x3F, 'Goron Race Finish'),
     (0x41, 'Race Finish'),
-    (0x42, 'Gorman Bros.'),
     (0x47, 'Ocarina Song of Soaring'),
     (0x48, 'Ocarina Song of Healing'),
     (0x49, 'Inverted Song Time'),
@@ -758,21 +757,19 @@ def set_color(world, rom, offsets, thisColor, length=1, pack=False):
                 rom.write_bytes(offset+(word*4), color)
 
 def configure_dungeon_info(rom, world):
-    mq_enable = world.quest == 'mixed'
     mapcompass_keysanity = world.settings.shuffle_mapcompass == 'keysanity' and world.settings.enhance_map_compass
 
-    bosses = ['Queen Gohma', 'King Dodongo', 'Barinade', 'Phantom Ganon',
-            'Volvagia', 'Morpha', 'Twinrova', 'Bongo Bongo']
+    bosses = [
+        "Odolwa",
+        "Goht",
+        "Gyorg",
+        "Twinmold"
+        ]
     dungeon_rewards = [boss_reward_index(world, boss) for boss in bosses]
 
-    codes = ['DT', 'DC', 'JB', 'FoT', 'FiT', 'WT', 'SpT', 'ShT',
-            'BW', 'IC', 'Tower (N/A)', 'GTG', 'Hideout (N/A)', 'GC']
-    dungeon_is_mq = [1 if world.dungeon_mq.get(c) else 0 for c in codes]
+    codes = ["WF", "SH", "GB", "ST"]
 
     rom.write_int32(rom.sym('cfg_dungeon_info_enable'), 1)
-    rom.write_int32(rom.sym('cfg_dungeon_info_mq_enable'), int(mq_enable))
-    rom.write_int32(rom.sym('cfg_dungeon_info_mq_need_map'), int(mapcompass_keysanity))
     rom.write_int32(rom.sym('cfg_dungeon_info_reward_need_compass'), int(mapcompass_keysanity))
     rom.write_int32(rom.sym('cfg_dungeon_info_reward_need_altar'), int(not mapcompass_keysanity))
     rom.write_bytes(rom.sym('cfg_dungeon_rewards'), dungeon_rewards)
-    rom.write_bytes(rom.sym('cfg_dungeon_is_mq'), dungeon_is_mq)
